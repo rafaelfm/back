@@ -10,6 +10,8 @@ use App\Models\User;
 use App\Notifications\TravelRequestStatusChanged;
 use Firebase\JWT\JWT;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
+use Illuminate\Testing\Fluent\AssertableJson;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Permission;
@@ -93,9 +95,121 @@ class TravelRequestApiTest extends TestCase
         ])->assertOk()
             ->assertJsonPath('meta.per_page', 5)
             ->assertJsonPath('meta.current_page', 2)
-            ->assertJson(function ($json) {
-                $this->assertNotEmpty($json['data']);
-            });
+            ->assertJson(fn (AssertableJson $json) =>
+                $json->has('data')
+                     ->where('data', fn ($data) => count($data) > 0)
+                     ->etc()
+            );
+    }
+
+    public function test_user_can_filter_travel_requests_by_departure_and_return_dates(): void
+    {
+        $user = User::factory()->create();
+        $user->assignRole('usuario');
+        $token = $this->jwtFor($user);
+
+        $city = $this->createCity('Rio de Janeiro', 'Rio de Janeiro', 'Brasil', 'RJ', 'BR');
+
+        $baseDate = Carbon::now()->startOfDay();
+
+        $matchingDeparture = $baseDate->copy()->addDays(30)->toDateString();
+        $matchingReturn = $baseDate->copy()->addDays(40)->toDateString();
+        $matchingDepartureIso = Carbon::parse($matchingDeparture)->toJSON();
+        $matchingReturnIso = Carbon::parse($matchingReturn)->toJSON();
+
+        TravelRequest::create([
+            'user_id' => $user->id,
+            'city_id' => $city->id,
+            'requester_name' => $user->name,
+            'departure_date' => $baseDate->copy()->addDays(5)->toDateString(),
+            'return_date' => $baseDate->copy()->addDays(10)->toDateString(),
+            'status' => 'requested',
+            'notes' => null,
+        ]);
+
+        $matching = TravelRequest::create([
+            'user_id' => $user->id,
+            'city_id' => $city->id,
+            'requester_name' => $user->name,
+            'departure_date' => $matchingDeparture,
+            'return_date' => $matchingReturn,
+            'status' => 'requested',
+            'notes' => null,
+        ]);
+
+        TravelRequest::create([
+            'user_id' => $user->id,
+            'city_id' => $city->id,
+            'requester_name' => $user->name,
+            'departure_date' => $baseDate->copy()->addDays(70)->toDateString(),
+            'return_date' => $baseDate->copy()->addDays(80)->toDateString(),
+            'status' => 'requested',
+            'notes' => null,
+        ]);
+
+        $response = $this->getJson(sprintf(
+            '/api/travel-requests?departure_from=%s&departure_to=%s&return_from=%s&return_to=%s',
+            $baseDate->copy()->addDays(25)->toDateString(),
+            $baseDate->copy()->addDays(35)->toDateString(),
+            $baseDate->copy()->addDays(38)->toDateString(),
+            $baseDate->copy()->addDays(45)->toDateString(),
+        ), [
+            'Authorization' => "Bearer {$token}",
+        ]);
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.id', $matching->id)
+            ->assertJsonPath('data.0.departure_date', $matchingDepartureIso)
+            ->assertJsonPath('data.0.return_date', $matchingReturnIso);
+    }
+
+    public function test_admin_can_list_travel_requests_for_all_users(): void
+    {
+        $admin = User::factory()->create();
+        $admin->assignRole('administrador');
+
+        $userOne = User::factory()->create();
+        $userOne->assignRole('usuario');
+
+        $userTwo = User::factory()->create();
+        $userTwo->assignRole('usuario');
+
+        $city = $this->createCity('Fortaleza', 'Ceara', 'Brasil', 'CE', 'BR');
+
+        $firstRequest = TravelRequest::create([
+            'user_id' => $userOne->id,
+            'city_id' => $city->id,
+            'requester_name' => $userOne->name,
+            'departure_date' => Carbon::now()->addDays(5)->toDateString(),
+            'return_date' => Carbon::now()->addDays(10)->toDateString(),
+            'status' => 'requested',
+            'notes' => null,
+        ]);
+
+        $secondRequest = TravelRequest::create([
+            'user_id' => $userTwo->id,
+            'city_id' => $city->id,
+            'requester_name' => $userTwo->name,
+            'departure_date' => Carbon::now()->addDays(15)->toDateString(),
+            'return_date' => Carbon::now()->addDays(20)->toDateString(),
+            'status' => 'requested',
+            'notes' => null,
+        ]);
+
+        $token = $this->jwtFor($admin);
+
+        $this->getJson('/api/travel-requests', [
+            'Authorization' => "Bearer {$token}",
+        ])->assertOk()
+            ->assertJsonPath('meta.total', 2)
+            ->assertJson(fn (AssertableJson $json) => $json
+                ->has('data', 2)
+                ->where('data', fn ($data) => collect($data)->pluck('id')->contains($firstRequest->id)
+                    && collect($data)->pluck('id')->contains($secondRequest->id))
+                ->etc()
+            );
     }
 
     public function test_admin_can_update_status_and_send_notification(): void
@@ -147,6 +261,38 @@ class TravelRequestApiTest extends TestCase
         ], [
             'Authorization' => "Bearer {$token}",
         ])->assertForbidden();
+    }
+
+    private function createCity(
+        ?string $cityName = null,
+        ?string $stateName = null,
+        ?string $countryName = null,
+        ?string $stateCode = null,
+        ?string $countryCode = null,
+    ): City {
+        $cityName ??= 'City '.Str::random(6);
+        $stateName ??= 'State '.Str::random(6);
+        $countryName ??= 'Country '.Str::random(6);
+
+        $country = Country::create([
+            'name' => $countryName,
+            'code' => $countryCode,
+            'slug' => Str::slug($countryName.'-'.Str::random(8)),
+        ]);
+
+        $state = State::create([
+            'country_id' => $country->id,
+            'name' => $stateName,
+            'code' => $stateCode,
+            'slug' => Str::slug($stateName.'-'.Str::random(8)),
+        ]);
+
+        return City::create([
+            'country_id' => $country->id,
+            'state_id' => $state->id,
+            'name' => $cityName,
+            'slug' => Str::slug($cityName.'-'.Str::random(8)),
+        ]);
     }
 
     private function jwtFor(User $user): string

@@ -28,7 +28,7 @@ class TravelRequestController extends Controller
         }
 
         $travelRequests = TravelRequest::query()
-            ->with(['city.state', 'city.country'])
+            ->with(['city.state', 'city.country', 'user'])
             ->when(! $user->can('travel.manage'), function (Builder $query) use ($user): void {
                 $query->where('user_id', $user->id);
             })
@@ -55,11 +55,17 @@ class TravelRequestController extends Controller
                     });
                 });
             })
-            ->when($request->filled('from'), function (Builder $query) use ($request): void {
-                $query->whereDate('departure_date', '>=', $request->date('from'));
+            ->when($request->filled('departure_from'), function (Builder $query) use ($request): void {
+                $query->whereDate('departure_date', '>=', $request->date('departure_from'));
             })
-            ->when($request->filled('to'), function (Builder $query) use ($request): void {
-                $query->whereDate('return_date', '<=', $request->date('to'));
+            ->when($request->filled('departure_to'), function (Builder $query) use ($request): void {
+                $query->whereDate('departure_date', '<=', $request->date('departure_to'));
+            })
+            ->when($request->filled('return_from'), function (Builder $query) use ($request): void {
+                $query->whereDate('return_date', '>=', $request->date('return_from'));
+            })
+            ->when($request->filled('return_to'), function (Builder $query) use ($request): void {
+                $query->whereDate('return_date', '<=', $request->date('return_to'));
             })
             ->latest()
             ->paginate(perPage: $request->integer('per_page', 10));
