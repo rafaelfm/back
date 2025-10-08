@@ -75,10 +75,27 @@ class TravelRequestApiTest extends TestCase
             ->assertJsonPath('data.city_id', $city->id)
             ->assertJsonPath('data.location_label', 'São Paulo, SP, Brasil');
 
+        TravelRequest::factory()->count(12)->create([
+            'user_id' => $user->id,
+            'city_id' => $city->id,
+            'status' => 'requested',
+        ]);
+
         $this->getJson('/api/travel-requests', [
             'Authorization' => "Bearer {$token}",
         ])->assertOk()
-            ->assertJsonPath('data.0.location_label', 'São Paulo, SP, Brasil');
+            ->assertJsonPath('data.0.location_label', 'São Paulo, SP, Brasil')
+            ->assertJsonPath('meta.per_page', 10)
+            ->assertJsonPath('meta.current_page', 1);
+
+        $this->getJson('/api/travel-requests?location=são%20paulo&per_page=5&page=2', [
+            'Authorization' => "Bearer {$token}",
+        ])->assertOk()
+            ->assertJsonPath('meta.per_page', 5)
+            ->assertJsonPath('meta.current_page', 2)
+            ->assertJson(function ($json) {
+                $this->assertNotEmpty($json['data']);
+            });
     }
 
     public function test_admin_can_update_status_and_send_notification(): void

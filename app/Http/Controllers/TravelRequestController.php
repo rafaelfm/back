@@ -19,6 +19,14 @@ class TravelRequestController extends Controller
 
         $user = $request->user();
 
+        $locationTerm = null;
+
+        if ($request->filled('location')) {
+            $locationTerm = strtolower($request->string('location')->value());
+        } elseif ($request->filled('destination')) {
+            $locationTerm = strtolower($request->string('destination')->value());
+        }
+
         $travelRequests = TravelRequest::query()
             ->with(['city.state', 'city.country'])
             ->when(! $user->can('travel.manage'), function (Builder $query) use ($user): void {
@@ -27,18 +35,24 @@ class TravelRequestController extends Controller
             ->when($request->filled('status'), function (Builder $query) use ($request): void {
                 $query->where('status', $request->string('status'));
             })
-            ->when($request->filled('destination'), function (Builder $query) use ($request): void {
-                $term = strtolower($request->string('destination')->value());
-                $query->whereHas('city', function (Builder $locationQuery) use ($term): void {
-                    $like = "%{$term}%";
-                    $locationQuery->whereRaw('LOWER(name) LIKE ?', [$like])
-                        ->orWhereHas('state', function (Builder $stateQuery) use ($like): void {
-                            $stateQuery->whereRaw('LOWER(name) LIKE ?', [$like])
-                                ->orWhereRaw('LOWER(code) LIKE ?', [$like]);
-                        })
-                        ->orWhereHas('country', function (Builder $countryQuery) use ($like): void {
-                            $countryQuery->whereRaw('LOWER(name) LIKE ?', [$like]);
+            ->when($locationTerm !== null && $locationTerm !== '', function (Builder $query) use ($locationTerm): void {
+                $tokens = collect(preg_split('/[\s,]+/', $locationTerm, -1, PREG_SPLIT_NO_EMPTY));
+
+                $query->whereHas('city', function (Builder $locationQuery) use ($tokens): void {
+                    $tokens->each(function (string $token) use ($locationQuery): void {
+                        $like = "%{$token}%";
+
+                        $locationQuery->where(function (Builder $inner) use ($like): void {
+                            $inner->whereRaw('LOWER(name) LIKE ?', [$like])
+                                ->orWhereHas('state', function (Builder $stateQuery) use ($like): void {
+                                    $stateQuery->whereRaw('LOWER(name) LIKE ?', [$like])
+                                        ->orWhereRaw('LOWER(code) LIKE ?', [$like]);
+                                })
+                                ->orWhereHas('country', function (Builder $countryQuery) use ($like): void {
+                                    $countryQuery->whereRaw('LOWER(name) LIKE ?', [$like]);
+                                });
                         });
+                    });
                 });
             })
             ->when($request->filled('from'), function (Builder $query) use ($request): void {
@@ -48,7 +62,7 @@ class TravelRequestController extends Controller
                 $query->whereDate('return_date', '<=', $request->date('to'));
             })
             ->latest()
-            ->paginate(perPage: $request->integer('per_page', 15));
+            ->paginate(perPage: $request->integer('per_page', 10));
 
         return JsonResource::collection($travelRequests)->response();
     }

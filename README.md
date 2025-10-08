@@ -57,7 +57,7 @@ docker compose exec laravel-backend php artisan migrate
 | --- | --- | --- |
 | POST | `/api/login` | Autentica e retorna JWT (15 min). |
 | GET | `/api/user` | Retorna o usuário autenticado + roles. |
-| GET | `/api/travel-requests` | Lista pedidos com filtros (`status`, `destination`, `from`, `to`). |
+| GET | `/api/travel-requests` | Lista pedidos com filtros (`status`, `location` – termo aplicado sobre cidade/estado/país, `from`, `to`) e paginação (`page`, `per_page`). |
 | POST | `/api/travel-requests` | Cria novo pedido vinculado ao usuário logado. |
 | GET | `/api/travel-requests/{id}` | Exibe detalhes (owner ou admin). |
 | PUT | `/api/travel-requests/{id}` | Atualiza dados do pedido (solicitante enquanto `requested` ou admin). |
