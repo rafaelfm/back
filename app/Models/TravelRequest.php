@@ -12,8 +12,8 @@ class TravelRequest extends Model
 
     protected $fillable = [
         'user_id',
+        'city_id',
         'requester_name',
-        'destination',
         'departure_date',
         'return_date',
         'status',
@@ -23,10 +23,37 @@ class TravelRequest extends Model
     protected $casts = [
         'departure_date' => 'date',
         'return_date' => 'date',
+        'city_id' => 'integer',
+    ];
+
+    protected $appends = [
+        'location_label',
     ];
 
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function city(): BelongsTo
+    {
+        return $this->belongsTo(City::class);
+    }
+
+    public function getLocationLabelAttribute(): string
+    {
+        $city = $this->city;
+
+        if (! $city) {
+            return '';
+        }
+
+        $parts = array_filter([
+            $city->name,
+            $city->state?->code ?? $city->state?->name,
+            $city->country?->name,
+        ]);
+
+        return implode(', ', $parts);
     }
 }

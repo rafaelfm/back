@@ -2,6 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Models\City;
+use App\Models\Country;
+use App\Models\State;
 use App\Models\TravelRequest;
 use App\Models\User;
 use App\Notifications\TravelRequestStatusChanged;
@@ -38,9 +41,29 @@ class TravelRequestApiTest extends TestCase
 
         $token = $this->jwtFor($user);
 
+        $country = Country::create([
+            'name' => 'Brasil',
+            'code' => 'BR',
+            'slug' => 'brasil',
+        ]);
+
+        $state = State::create([
+            'country_id' => $country->id,
+            'name' => 'São Paulo',
+            'code' => 'SP',
+            'slug' => 'sao-paulo',
+        ]);
+
+        $city = City::create([
+            'country_id' => $country->id,
+            'state_id' => $state->id,
+            'name' => 'São Paulo',
+            'slug' => 'sao-paulo-city',
+        ]);
+
         $payload = [
             'requester_name' => $user->name,
-            'destination' => 'São Paulo, Brasil',
+            'city_id' => $city->id,
             'departure_date' => now()->addWeek()->toDateString(),
             'return_date' => now()->addWeeks(2)->toDateString(),
             'notes' => 'Reunião com cliente',
@@ -49,12 +72,13 @@ class TravelRequestApiTest extends TestCase
         $this->postJson('/api/travel-requests', $payload, [
             'Authorization' => "Bearer {$token}",
         ])->assertCreated()
-            ->assertJsonPath('data.destination', 'São Paulo, Brasil');
+            ->assertJsonPath('data.city_id', $city->id)
+            ->assertJsonPath('data.location_label', 'São Paulo, SP, Brasil');
 
         $this->getJson('/api/travel-requests', [
             'Authorization' => "Bearer {$token}",
         ])->assertOk()
-            ->assertJsonPath('data.0.destination', 'São Paulo, Brasil');
+            ->assertJsonPath('data.0.location_label', 'São Paulo, SP, Brasil');
     }
 
     public function test_admin_can_update_status_and_send_notification(): void

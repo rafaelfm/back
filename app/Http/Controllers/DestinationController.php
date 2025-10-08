@@ -22,6 +22,7 @@ class DestinationController extends Controller
             ->select([
                 'destinations.id',
                 'destinations.slug',
+                'destinations.city_id',
                 'destinations.label',
                 'cities.name as city_name',
                 'states.name as state_name',
@@ -57,6 +58,7 @@ class DestinationController extends Controller
                 return [
                     'id' => $row->id,
                     'slug' => $row->slug,
+                    'city_id' => $row->city_id,
                     'city' => $row->city_name,
                     'state' => $row->state_name,
                     'state_code' => $row->state_code,

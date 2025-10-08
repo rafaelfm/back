@@ -20,6 +20,7 @@ class TravelRequestController extends Controller
         $user = $request->user();
 
         $travelRequests = TravelRequest::query()
+            ->with(['city.state', 'city.country'])
             ->when(! $user->can('travel.manage'), function (Builder $query) use ($user): void {
                 $query->where('user_id', $user->id);
             })
@@ -27,8 +28,18 @@ class TravelRequestController extends Controller
                 $query->where('status', $request->string('status'));
             })
             ->when($request->filled('destination'), function (Builder $query) use ($request): void {
-                $destination = strtolower($request->string('destination')->value());
-                $query->whereRaw('LOWER(destination) LIKE ?', ["%{$destination}%"]);
+                $term = strtolower($request->string('destination')->value());
+                $query->whereHas('city', function (Builder $locationQuery) use ($term): void {
+                    $like = "%{$term}%";
+                    $locationQuery->whereRaw('LOWER(name) LIKE ?', [$like])
+                        ->orWhereHas('state', function (Builder $stateQuery) use ($like): void {
+                            $stateQuery->whereRaw('LOWER(name) LIKE ?', [$like])
+                                ->orWhereRaw('LOWER(code) LIKE ?', [$like]);
+                        })
+                        ->orWhereHas('country', function (Builder $countryQuery) use ($like): void {
+                            $countryQuery->whereRaw('LOWER(name) LIKE ?', [$like]);
+                        });
+                });
             })
             ->when($request->filled('from'), function (Builder $query) use ($request): void {
                 $query->whereDate('departure_date', '>=', $request->date('from'));
@@ -46,25 +57,31 @@ class TravelRequestController extends Controller
     {
         $this->authorize('create', TravelRequest::class);
 
-        $data = $request->validate([
-            'requester_name' => ['required', 'string', 'max:255'],
-            'destination' => ['required', 'string', 'max:255'],
-            'departure_date' => ['required', 'date', 'after_or_equal:today'],
-            'return_date' => ['required', 'date', 'after:departure_date'],
-            'notes' => ['nullable', 'string'],
-        ]);
+        $data = $request->validate(
+            $this->validationRules(),
+            $this->validationMessages(),
+            $this->validationAttributes(),
+        );
 
         $travelRequest = $request->user()->travelRequests()->create([
-            ...$data,
+            'city_id' => $data['city_id'],
+            'requester_name' => $data['requester_name'],
+            'departure_date' => $data['departure_date'],
+            'return_date' => $data['return_date'],
+            'notes' => $data['notes'] ?? null,
             'status' => 'requested',
         ]);
 
-        return JsonResource::make($travelRequest->fresh())->response()->setStatusCode(201);
+        $travelRequest->load(['city.state', 'city.country']);
+
+        return JsonResource::make($travelRequest)->response()->setStatusCode(201);
     }
 
     public function show(Request $request, TravelRequest $travelRequest): JsonResponse
     {
         $this->authorize('view', $travelRequest);
+
+        $travelRequest->load(['city.state', 'city.country']);
 
         return JsonResource::make($travelRequest)->response();
     }
@@ -73,17 +90,23 @@ class TravelRequestController extends Controller
     {
         $this->authorize('update', $travelRequest);
 
-        $data = $request->validate([
-            'requester_name' => ['required', 'string', 'max:255'],
-            'destination' => ['required', 'string', 'max:255'],
-            'departure_date' => ['required', 'date', 'after_or_equal:today'],
-            'return_date' => ['required', 'date', 'after:departure_date'],
-            'notes' => ['nullable', 'string'],
+        $data = $request->validate(
+            $this->validationRules(),
+            $this->validationMessages(),
+            $this->validationAttributes(),
+        );
+
+        $travelRequest->update([
+            'city_id' => $data['city_id'],
+            'requester_name' => $data['requester_name'],
+            'departure_date' => $data['departure_date'],
+            'return_date' => $data['return_date'],
+            'notes' => $data['notes'] ?? null,
         ]);
 
-        $travelRequest->update($data);
+        $travelRequest->load(['city.state', 'city.country']);
 
-        return JsonResource::make($travelRequest->fresh())->response();
+        return JsonResource::make($travelRequest)->response();
     }
 
     public function destroy(Request $request, TravelRequest $travelRequest): JsonResponse
@@ -119,7 +142,7 @@ class TravelRequestController extends Controller
         }
 
         $travelRequest->update(['status' => $validated['status']]);
-        $travelRequest->refresh();
+        $travelRequest->refresh()->load(['city.state', 'city.country']);
 
         Notification::send(
             $travelRequest->user,
@@ -127,5 +150,51 @@ class TravelRequestController extends Controller
         );
 
         return JsonResource::make($travelRequest)->response();
+    }
+
+    /**
+     * @return array<string, array<int, string>>
+     */
+    private function validationRules(): array
+    {
+        return [
+            'requester_name' => ['required', 'string', 'max:255'],
+            'city_id' => ['required', 'integer', Rule::exists('cities', 'id')],
+            'departure_date' => ['required', 'date', 'after_or_equal:today'],
+            'return_date' => ['required', 'date', 'after:departure_date'],
+            'notes' => ['nullable', 'string'],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function validationMessages(): array
+    {
+        return [
+            'required' => 'O campo :attribute é obrigatório.',
+            'string' => 'O campo :attribute deve ser um texto válido.',
+            'max.string' => 'O campo :attribute deve ter no máximo :max caracteres.',
+            'date' => 'O campo :attribute deve ser uma data válida.',
+            'departure_date.after_or_equal' => 'O campo :attribute deve ser uma data a partir de hoje.',
+            'return_date.after' => 'O campo :attribute deve ser uma data posterior à Data de ida.',
+            'city_id.required' => 'Selecione uma cidade válida.',
+            'city_id.integer' => 'Selecione uma cidade válida.',
+            'city_id.exists' => 'Selecione uma cidade válida.',
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function validationAttributes(): array
+    {
+        return [
+            'requester_name' => 'Solicitante',
+            'city_id' => 'Cidade',
+            'departure_date' => 'Data de ida',
+            'return_date' => 'Data de volta',
+            'notes' => 'Observações',
+        ];
     }
 }

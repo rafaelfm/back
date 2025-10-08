@@ -27,7 +27,7 @@ class TravelRequestStatusChanged extends Notification
         return (new MailMessage())
             ->subject("Status do pedido de viagem #{$this->travelRequest->id} atualizado")
             ->greeting("Olá {$notifiable->name},")
-            ->line("O status do seu pedido de viagem para {$this->travelRequest->destination} foi alterado de {$this->previousStatus} para {$this->travelRequest->status}.")
+            ->line("O status do seu pedido de viagem para {$this->travelRequest->location_label} foi alterado de {$this->previousStatus} para {$this->travelRequest->status}.")
             ->line('Datas:')
             ->line(" • Ida: {$this->travelRequest->departure_date->format('d/m/Y')}")
             ->line(" • Volta: {$this->travelRequest->return_date->format('d/m/Y')}")

@@ -10,8 +10,8 @@ return new class extends Migration {
         Schema::create('travel_requests', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('city_id')->constrained()->cascadeOnUpdate()->restrictOnDelete();
             $table->string('requester_name');
-            $table->string('destination');
             $table->date('departure_date');
             $table->date('return_date');
             $table->enum('status', ['requested', 'approved', 'cancelled'])->default('requested');
