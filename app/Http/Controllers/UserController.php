@@ -92,8 +92,16 @@ class UserController extends Controller
             return response()->json(['message' => 'Usuário não encontrado'], 404);
         }
 
+        $roles = $user->roles()->pluck('name');
+
         return response()->json([
-            'user' => $user->only(['id', 'name', 'email']),
+            'user' => array_merge(
+                $user->only(['id', 'name', 'email']),
+                [
+                    'roles' => $roles->toArray(),
+                    'role' => $roles->first(),
+                ],
+            ),
         ]);
     }
 

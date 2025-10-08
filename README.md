@@ -1,61 +1,110 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Backend – Gerenciador de Viagens Corporativas
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Esta API em Laravel fornece os endpoints utilizados pelo front-end em Vue para gerenciar pedidos de viagem corporativa. Ela utiliza JWT para autenticação, Spatie Permissions para controle de acesso e envia notificações por e-mail quando um pedido é aprovado ou cancelado.
 
-## About Laravel
+## Requisitos
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- PHP 8.2+
+- Composer
+- MySQL 8+
+- Docker / Docker Compose (opcional, recomendado)
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Instalação
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+```bash
+cd back
+cp .env.example .env
+# Ajuste as variáveis de ambiente (APP_KEY, DB_*, MAIL_*, etc.)
+composer install
+php artisan key:generate
+php artisan migrate --seed
+```
 
-## Learning Laravel
+> A seed `InitialSetupSeeder` cria o banco (se necessário), aplica as migrations, registra permissões/roles (`administrador`, `usuario`) e usuários padrões:
+>
+> - admin@gmail.com / admin@gmail.com
+> - usuario@gmail.com / usuario@gmail.com
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+## Executando com Docker (recomendado)
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+```bash
+cd docker-laravel-vue
+docker compose up -d --build
+```
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+| Serviço | Container | Porta |
+| --- | --- | --- |
+| Laravel FPM | `laravel-backend` | Interna 9000 |
+| Front (Vite) | `vue-frontend` | Interna 5173 (acessível via Nginx) |
+| Nginx | `nginx` | `http://localhost:91` |
+| MySQL | `mysql` | `localhost:3306` |
 
-## Laravel Sponsors
+Execute comandos artisan dentro do container, se necessário:
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+```bash
+docker compose exec laravel-backend php artisan migrate
+```
 
-### Premium Partners
+## Executando localmente sem Docker
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+1. Configure MySQL e o arquivo `.env`.
+2. Rode `php artisan migrate --seed`.
+3. Inicie o servidor: `php artisan serve --host=0.0.0.0 --port=8000`.
 
-## Contributing
+## Endpoints Principais
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+| Método | Rota | Descrição |
+| --- | --- | --- |
+| POST | `/api/login` | Autentica e retorna JWT (15 min). |
+| GET | `/api/user` | Retorna o usuário autenticado + roles. |
+| GET | `/api/travel-requests` | Lista pedidos com filtros (`status`, `destination`, `from`, `to`). |
+| POST | `/api/travel-requests` | Cria novo pedido vinculado ao usuário logado. |
+| GET | `/api/travel-requests/{id}` | Exibe detalhes (owner ou admin). |
+| PUT | `/api/travel-requests/{id}` | Atualiza dados do pedido (solicitante enquanto `requested` ou admin). |
+| PATCH | `/api/travel-requests/{id}/status` | Atualiza status (`approved`, `cancelled`) – apenas administradores. |
+| DELETE | `/api/travel-requests/{id}` | Remove pedido (`requested` do próprio usuário ou administrador). |
 
-## Code of Conduct
+Todas as rotas (exceto `/login` e `/user`) exigem `Authorization: Bearer <token>`.
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+## Permissões e Papéis
 
-## Security Vulnerabilities
+- `travel.create`: criar/listar seus pedidos.
+- `travel.manage`: visualizar e alterar pedidos de todos os usuários.
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+O seeder atribui:
 
-## License
+- `administrador` → `travel.create`, `travel.manage`
+- `usuario` → `travel.create`
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+## Notificações
+
+`TravelRequestStatusChanged` envia e-mails quando um pedido é aprovado ou cancelado. Configure o mailer no `.env` (`MAIL_MAILER`, `MAIL_HOST`, etc.).
+
+## Testes
+
+```bash
+php artisan test --testsuite=Feature --filter=TravelRequestApiTest
+```
+
+Cobertura atual:
+
+- Criação e listagem de pedidos do usuário.
+- Atualização de status por administradores e disparo de notificação.
+- Bloqueio de atualização de status por usuários comuns.
+
+## Estrutura
+
+- `app/Http/Controllers/TravelRequestController.php`
+- `app/Http/Middleware/JwtAuthenticate.php`
+- `app/Notifications/TravelRequestStatusChanged.php`
+- `app/Policies/TravelRequestPolicy.php`
+- `tests/Feature/TravelRequestApiTest.php`
+
+## JWT
+
+Os tokens são assinados com `APP_KEY` (HS256) e expiram em 15 minutos. Refaça o login para gerar um novo token.
+
+## Próximos Passos
+
+- Configurar fila para envio assíncrono das notificações (atualmente síncronas).
+- Expandir cobertura de testes (filtros, deleção, notificações).

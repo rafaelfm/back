@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use App\Models\User;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
 class InitialSetupSeeder extends Seeder
@@ -30,13 +31,23 @@ class InitialSetupSeeder extends Seeder
 
         Artisan::call('migrate', ['--force' => true]);
 
-        $roles = [
-            'administrador',
-            'usuario',
+        $permissions = [
+            'travel.create',
+            'travel.manage',
         ];
 
-        foreach ($roles as $roleName) {
-            Role::firstOrCreate(['name' => $roleName]);
+        foreach ($permissions as $permission) {
+            Permission::firstOrCreate(['name' => $permission]);
+        }
+
+        $roles = [
+            'administrador' => $permissions,
+            'usuario' => ['travel.create'],
+        ];
+
+        foreach ($roles as $roleName => $rolePermissions) {
+            $role = Role::firstOrCreate(['name' => $roleName]);
+            $role->givePermissionTo($rolePermissions);
         }
 
         $users = [
