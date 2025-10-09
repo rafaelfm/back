@@ -4,6 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\TravelRequest;
 use App\Notifications\TravelRequestStatusChanged;
+use App\TravelRequests\Exceptions\InvalidTravelRequestTransitionException;
+use App\TravelRequests\Exceptions\TravelRequestTransitionException;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -147,22 +150,37 @@ class TravelRequestController extends Controller
             ],
         ]);
 
-        $this->authorize('updateStatus', [$travelRequest, $validated['status']]);
-
-        if ($travelRequest->status === 'approved' && $validated['status'] === 'cancelled') {
-            return response()->json([
-                'message' => 'Pedidos aprovados não podem ser cancelados.',
-            ], 422);
-        }
-
-        $previousStatus = $travelRequest->status;
-
         if ($travelRequest->status === $validated['status']) {
             return JsonResource::make($travelRequest)->response();
         }
 
-        $travelRequest->update(['status' => $validated['status']]);
-        $travelRequest->refresh()->load(['city.state', 'city.country']);
+        $user = $request->user();
+
+        try {
+            $travelRequest->ensureStatusTransitionPossible($validated['status'], $user);
+        } catch (InvalidTravelRequestTransitionException $exception) {
+            return response()->json([
+                'message' => $this->invalidTransitionMessage($exception),
+            ], 422);
+        }
+
+        $this->authorize('updateStatus', [$travelRequest, $validated['status']]);
+
+        $previousStatus = $travelRequest->status;
+
+        try {
+            $travelRequest = $travelRequest->transitionStatusTo($validated['status'], $user);
+        } catch (TravelRequestTransitionException $exception) {
+            if ($exception instanceof InvalidTravelRequestTransitionException) {
+                return response()->json([
+                    'message' => $this->invalidTransitionMessage($exception),
+                ], 422);
+            }
+
+            throw new AuthorizationException($exception->getMessage(), $exception->getCode(), $exception);
+        }
+
+        $travelRequest->load(['city.state', 'city.country']);
 
         Notification::send(
             $travelRequest->user,
@@ -170,6 +188,15 @@ class TravelRequestController extends Controller
         );
 
         return JsonResource::make($travelRequest)->response();
+    }
+
+    private function invalidTransitionMessage(TravelRequestTransitionException $exception): string
+    {
+        if ($exception->from() === 'approved' && $exception->to() === 'cancelled') {
+            return 'Pedidos aprovados não podem ser cancelados.';
+        }
+
+        return 'A transição de status solicitada não é permitida.';
     }
 
     /**

@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\TravelRequests\States\TravelRequestState;
+use App\TravelRequests\States\TravelRequestStateFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -55,5 +57,27 @@ class TravelRequest extends Model
         ]);
 
         return implode(', ', $parts);
+    }
+
+    public function stateFor(User $actor): TravelRequestState
+    {
+        return TravelRequestStateFactory::make($this, $actor);
+    }
+
+    public function ensureStatusTransitionPossible(string $status, User $actor): void
+    {
+        $this->stateFor($actor)->ensureTransitionPossible($status);
+    }
+
+    public function canTransitionStatusTo(string $status, User $actor): bool
+    {
+        return $this->stateFor($actor)->canTransitionTo($status);
+    }
+
+    public function transitionStatusTo(string $status, User $actor): self
+    {
+        $this->stateFor($actor)->transitionTo($status);
+
+        return $this->refresh();
     }
 }

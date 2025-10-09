@@ -45,19 +45,7 @@ class TravelRequestPolicy
 
     public function updateStatus(User $user, TravelRequest $travelRequest, string $status): bool
     {
-        if (! $user->can('travel.manage')) {
-            return false;
-        }
-
-        if ($travelRequest->status === 'approved' && $status === 'cancelled') {
-            return false;
-        }
-
-        if ($travelRequest->status === 'cancelled' && $status === 'approved') {
-            return false;
-        }
-
-        return true;
+        return $travelRequest->canTransitionStatusTo($status, $user);
     }
 
     public function delete(User $user, TravelRequest $travelRequest): bool
