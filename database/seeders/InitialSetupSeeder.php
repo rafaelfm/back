@@ -11,6 +11,8 @@ use App\Models\City;
 use App\Models\TravelRequest;
 use Database\Seeders\DestinationSeeder;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Env;
+
 use function now;
 use function fake;
 use Spatie\Permission\Models\Permission;
@@ -23,7 +25,7 @@ class InitialSetupSeeder extends Seeder
      */
     public function run(): void
     {
-        $databaseName = 'banco';
+        $databaseName = Env::get('DB_DATABASE', 'laravel');
 
         Config::set('database.connections.mysql.database', null);
         DB::purge('mysql');
